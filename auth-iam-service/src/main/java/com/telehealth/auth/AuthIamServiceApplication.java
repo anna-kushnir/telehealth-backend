@@ -1,4 +1,4 @@
-package com.telehealth.authiamservice;
+package com.telehealth.auth;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
