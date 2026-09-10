@@ -1,0 +1,4 @@
+CREATE DATABASE auth_db;
+CREATE DATABASE patient_db;
+CREATE DATABASE appointments_db;
+CREATE DATABASE audit_db;
