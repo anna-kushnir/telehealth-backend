@@ -1,5 +1,6 @@
 package com.telehealth.auth.model;
 
+import com.telehealth.auth.security.StringCryptoConverter;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -21,14 +22,27 @@ public class User {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(nullable = false, unique = true, length = 100)
-    private String username;
+    @Convert(converter = StringCryptoConverter.class)
+    @Column(nullable = false, unique = true)
+    private String email;
 
     @Column(nullable = false)
     private String passwordHash;
 
     @Column(nullable = false)
+    @Builder.Default
     private boolean isActive = true;
+
+    @Column(name = "is_2fa_enabled", nullable = false)
+    @Builder.Default
+    private boolean is2faEnabled = false;
+
+    @Convert(converter = StringCryptoConverter.class)
+    @Column(name = "email_auth_code")
+    private String emailAuthCode;
+
+    @Column(name = "code_expires_at")
+    private LocalDateTime codeExpiresAt;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
