@@ -50,6 +50,14 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     restart: unless-stopped
 
+  mailpit:
+    image: axllent/mailpit
+    container_name: telehealth-mailpit
+    ports:
+      - "1025:1025"   # SMTP
+      - "8085:8025"   # Web UI
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   neo4j_data:

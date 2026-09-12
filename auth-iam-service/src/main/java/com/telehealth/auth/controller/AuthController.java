@@ -10,6 +10,7 @@ import com.telehealth.auth.repository.RoleRepository;
 import com.telehealth.auth.repository.UserRepository;
 import com.telehealth.auth.security.JwtUtils;
 import com.telehealth.auth.security.UserDetailsImpl;
+import com.telehealth.auth.service.EmailService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -42,6 +43,7 @@ public class AuthController {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtils jwtUtils;
+    private final EmailService emailService;
 
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@Valid @RequestBody RegisterRequest registerRequest) {
@@ -81,8 +83,8 @@ public class AuthController {
             user.setCodeExpiresAt(LocalDateTime.now().plusMinutes(5));
             userRepository.save(user);
 
-            // TODO: додати відправку коду на email
-            System.out.println("MOCK EMAIL: Your verification code is - " + code);
+            emailService.send2faCode(user.getEmail(), code);
+
             return ResponseEntity.status(HttpStatus.ACCEPTED).body("Verification code was sent on your email.");
         }
 
