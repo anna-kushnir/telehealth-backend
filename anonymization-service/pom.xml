@@ -9,7 +9,7 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.telehealth</groupId>
-    <artifactId>anonymization-service</artifactId>
+    <artifactId>anonymization</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>anonymization-service</name>
     <description>anonymization-service</description>

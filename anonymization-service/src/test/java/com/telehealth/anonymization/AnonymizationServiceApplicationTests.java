@@ -1,4 +1,4 @@
-package com.telehealth.anonymizationservice;
+package com.telehealth.anonymization;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
