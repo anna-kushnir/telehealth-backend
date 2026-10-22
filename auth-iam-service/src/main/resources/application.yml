@@ -20,6 +20,18 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
 
+  neo4j:
+    uri: bolt://localhost:7687
+    authentication:
+      username: neo4j
+      password: secretPassword
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
   mail:
     host: localhost
     port: 1025
@@ -31,6 +43,10 @@ spring:
           auth: false
           starttls:
             enable: false
+
+privacy-mesh:
+  mfa-policies:
+    auth-iam-service: LOW
 
 jwt:
   secret: G72H700492HSWMDL998601SLQOWEBXZ7V12B0839216TH6FD78H1D401

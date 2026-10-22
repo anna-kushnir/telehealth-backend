@@ -9,6 +9,6 @@ import com.telehealth.auth.dto.response.JwtResponse;
 public interface AuthService {
 
     void registerUser(RegisterRequest registerRequest);
-    AuthResult loginUser(LoginRequest loginRequest);
-    JwtResponse verify2faCode(Verify2faRequest verify2faRequest);
+    AuthResult loginUser(LoginRequest loginRequest, String dpopHeader);
+    JwtResponse verify2faCode(Verify2faRequest verify2faRequest, String dpopHeader);
 }

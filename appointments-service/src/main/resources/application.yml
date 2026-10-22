@@ -4,11 +4,13 @@ server:
 spring:
   application:
     name: appointments-service
+
   datasource:
     url: jdbc:postgresql://localhost:5434/appointments_db
     username: postgres
     password: secretPassword
     driver-class-name: org.postgresql.Driver
+
   jpa:
     hibernate:
       ddl-auto: update

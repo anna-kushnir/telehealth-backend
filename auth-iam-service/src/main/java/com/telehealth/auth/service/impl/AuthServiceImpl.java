@@ -13,6 +13,8 @@ import com.telehealth.auth.security.JwtUtils;
 import com.telehealth.auth.security.UserDetailsImpl;
 import com.telehealth.auth.service.AuthService;
 import com.telehealth.auth.service.EmailService;
+import kpi.kushnir.privacy.neo4j.UserIdentityNode;
+import kpi.kushnir.privacy.neo4j.UserIdentityRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -32,6 +34,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
 public class AuthServiceImpl implements AuthService {
 
     private final AuthenticationManager authenticationManager;
@@ -41,11 +44,14 @@ public class AuthServiceImpl implements AuthService {
     private final JwtUtils jwtUtils;
     private final EmailService emailService;
 
+//    private final KafkaTemplate<String, String> kafkaTemplate;
+    private final UserIdentityRepository userIdentityRepository;
+
     @Override
     @Transactional
     public void registerUser(RegisterRequest registerRequest) {
         if (userRepository.existsByEmail(registerRequest.getEmail())) {
-            throw new IllegalArgumentException("Error: Email is already taken!");
+            throw new IllegalArgumentException("Email is already taken!");
         }
 
         User user = User.builder()
@@ -57,21 +63,24 @@ public class AuthServiceImpl implements AuthService {
                 .build();
 
         Role userRole = roleRepository.findByName(registerRequest.getRole())
-                .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
+                .orElseThrow(() -> new RuntimeException("Role is not found."));
 
         user.getRoles().add(userRole);
         userRepository.save(user);
+        user = userRepository.findByEmail(user.getEmail())
+                .orElseThrow(() -> new RuntimeException("User was not created."));
+        userIdentityRepository.save(new UserIdentityNode(user.getId().toString()));
     }
 
     @Override
     @Transactional
-    public AuthResult loginUser(LoginRequest loginRequest) {
+    public AuthResult loginUser(LoginRequest loginRequest, String dpopHeader) {
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(loginRequest.getEmail(), loginRequest.getPassword()));
 
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         User user = userRepository.findByEmail(Objects.requireNonNull(userDetails).getUsername())
-                .orElseThrow(() -> new RuntimeException("Error: User is not found."));
+                .orElseThrow(() -> new RuntimeException("User is not found."));
 
         if (user.is2faEnabled()) {
             String code = String.format("%06d", new Random().nextInt(999999));
@@ -89,12 +98,15 @@ public class AuthServiceImpl implements AuthService {
 
         return AuthResult.builder()
                 .requires2fa(false)
-                .jwtResponse(generateJwtResponse(authentication, userDetails))
+                .jwtResponse(generateJwtResponse(authentication, userDetails, dpopHeader, List.of("pwd")))
                 .build();
     }
 
-    private JwtResponse generateJwtResponse(Authentication authentication, UserDetailsImpl userDetails) {
-        String jwt = jwtUtils.generateJwtToken(authentication);
+    private JwtResponse generateJwtResponse(Authentication authentication,
+                                            UserDetailsImpl userDetails,
+                                            String dpopHeader,
+                                            List<String> amrMethods) {
+        String jwt = jwtUtils.generateDpopBoundToken(authentication, dpopHeader, amrMethods);
 
         List<String> roles = Objects.requireNonNull(userDetails).getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
@@ -105,13 +117,13 @@ public class AuthServiceImpl implements AuthService {
                 .id(userDetails.getId())
                 .username(userDetails.getUsername())
                 .roles(roles)
-                .type("Bearer")
+                .type("DPoP")
                 .build();
     }
 
     @Override
     @Transactional
-    public JwtResponse verify2faCode(Verify2faRequest verify2faRequest) {
+    public JwtResponse verify2faCode(Verify2faRequest verify2faRequest, String dpopHeader) {
         User user = userRepository.findByEmail(verify2faRequest.getEmail())
                 .orElseThrow(() -> new RuntimeException("Error: User is not found."));
 
@@ -136,6 +148,6 @@ public class AuthServiceImpl implements AuthService {
                 userDetails, null, userDetails.getAuthorities());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        return generateJwtResponse(authentication, userDetails);
+        return generateJwtResponse(authentication, userDetails, dpopHeader, List.of("pwd", "otp"));
     }
 }
