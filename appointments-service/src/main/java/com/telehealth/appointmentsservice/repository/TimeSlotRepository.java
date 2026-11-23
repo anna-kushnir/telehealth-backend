@@ -18,6 +18,6 @@ public interface TimeSlotRepository extends JpaRepository<TimeSlot, Long> {
     boolean existsByDoctorIdAndStartTime(UUID doctorId, LocalDateTime startTime);
 
     @Modifying
-    @Query("DELETE FROM TimeSlot t WHERE t.doctorId = :doctorId AND t.isBooked = false AND t.startTime >= :start AND t.endTime <= :end")
+    @Query("DELETE FROM TimeSlot t WHERE t.doctorId = :doctorId AND t.booked = false AND t.startTime >= :start AND t.endTime <= :end")
     void deleteUnbookedSlots(@Param("doctorId") UUID doctorId, @Param("start") LocalDateTime startTime, @Param("end") LocalDateTime end);
 }

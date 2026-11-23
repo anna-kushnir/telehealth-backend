@@ -24,7 +24,7 @@ public class GenerateWeeklyScheduleRequest {
     @FutureOrPresent
     private LocalDate endDate;
 
-    @Min(10)
+    @Min(5)
     private int slotDurationMinutes;
 
     private Map<DayOfWeek, Shift> workingDays;

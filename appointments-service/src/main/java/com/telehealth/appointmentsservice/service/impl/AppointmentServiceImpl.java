@@ -11,6 +11,9 @@ import com.telehealth.appointmentsservice.service.AppointmentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestTemplate;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -24,10 +27,27 @@ public class AppointmentServiceImpl implements AppointmentService {
 
     private final AppointmentRepository appointmentRepository;
     private final TimeSlotRepository timeSlotRepository;
+    private final RestTemplate restTemplate;
+
+    private void checkDoctorExists(UUID doctorId) {
+        String authServiceUrl = "http://localhost:8080/api/v1/auth/doctors/" + doctorId + "/exists";
+        try {
+            Boolean doctorExists = restTemplate.getForObject(authServiceUrl, Boolean.class);
+            if (Boolean.FALSE.equals(doctorExists)) {
+                throw new IllegalArgumentException("Doctor with specified ID does not exist or has no ROLE_DOCTOR.");
+            }
+        } catch (HttpClientErrorException.Unauthorized e) {
+            throw new IllegalStateException("Inter-service security error: auth-iam-service blocked the request (401).");
+        } catch (RestClientException e) {
+            throw new IllegalStateException("Failed to validate doctor via auth-iam-service: " + e.getMessage());
+        }
+    }
 
     @Override
     @Transactional
     public void generateWeeklySchedule(GenerateWeeklyScheduleRequest request) {
+        checkDoctorExists(request.getDoctorId());
+
         LocalDate currentDate = request.getStartDate();
         LocalDate endDate = request.getEndDate();
 
@@ -46,7 +66,7 @@ public class AppointmentServiceImpl implements AppointmentService {
                                 .doctorId(request.getDoctorId())
                                 .startTime(currentSlotStart)
                                 .endTime(currentSlotStart.plusMinutes(request.getSlotDurationMinutes()))
-                                .isBooked(false)
+                                .booked(false)
                                 .build();
                         timeSlotRepository.save(timeSlot);
                     }
@@ -60,20 +80,24 @@ public class AppointmentServiceImpl implements AppointmentService {
     @Override
     @Transactional
     public void clearUnbookedSlots(UUID doctorId, LocalDateTime start, LocalDateTime end) {
+        checkDoctorExists(doctorId);
+        // TODO: add check: only admin or the same doctor can do this operation
         timeSlotRepository.deleteUnbookedSlots(doctorId, start, end);
     }
 
     @Override
     public List<TimeSlot> getAvailableTimeSlots(UUID doctorId, LocalDateTime start, LocalDateTime end) {
+        checkDoctorExists(doctorId);
         return timeSlotRepository.findByDoctorIdAndBookedFalseAndStartTimeBetweenOrderByStartTimeAsc(
                 doctorId, start, end);
     }
 
     @Override
     @Transactional
-    public Appointment createAppointment(CreateAppointmentRequest request) {
+    public Appointment createAppointment(CreateAppointmentRequest request, String patientPseudonym) {
         TimeSlot timeSlot = timeSlotRepository.findById(request.getSlotId())
                 .orElseThrow(() -> new IllegalArgumentException("Time slot not found"));
+        checkDoctorExists(timeSlot.getDoctorId());
 
         if (timeSlot.isBooked()) {
             throw new IllegalStateException("Time slot is already booked");
@@ -83,12 +107,23 @@ public class AppointmentServiceImpl implements AppointmentService {
         timeSlotRepository.save(timeSlot);
 
         Appointment appointment = Appointment.builder()
-                .patientToken(request.getPatientToken())
+                .doctorId(timeSlot.getDoctorId())
+                .patientToken(patientPseudonym)
                 .timeSlot(timeSlot)
                 .status(AppointmentStatus.PLANNED)
                 .notes(request.getNotes())
                 .build();
 
         return appointmentRepository.save(appointment);
+    }
+
+    @Override
+    public List<Appointment> getMyAppointments(String patientPseudonym) {
+        return appointmentRepository.findByPatientToken(patientPseudonym);
+    }
+
+    @Override
+    public List<Appointment> getDoctorAppointments(UUID doctorId) {
+        return appointmentRepository.findByTimeSlot_DoctorId(doctorId);
     }
 }

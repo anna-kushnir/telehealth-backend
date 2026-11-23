@@ -6,6 +6,7 @@ import com.telehealth.auth.dto.request.Verify2faRequest;
 import com.telehealth.auth.dto.response.AuthResult;
 import com.telehealth.auth.dto.response.JwtResponse;
 import com.telehealth.auth.model.Role;
+import com.telehealth.auth.model.RoleName;
 import com.telehealth.auth.model.User;
 import com.telehealth.auth.repository.RoleRepository;
 import com.telehealth.auth.repository.UserRepository;
@@ -26,10 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Random;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -54,6 +52,11 @@ public class AuthServiceImpl implements AuthService {
             throw new IllegalArgumentException("Email is already taken!");
         }
 
+        if (registerRequest.getRole() == RoleName.ROLE_ADMIN ||
+                registerRequest.getRole() == RoleName.ROLE_DOCTOR) {
+            throw new SecurityException("Self-registration for DOCTOR or ADMIN roles is forbidden.");
+        }
+
         User user = User.builder()
                 .email(registerRequest.getEmail())
                 .passwordHash(passwordEncoder.encode(registerRequest.getPassword()))
@@ -62,14 +65,35 @@ public class AuthServiceImpl implements AuthService {
                 .roles(new HashSet<>())
                 .build();
 
-        Role userRole = roleRepository.findByName(registerRequest.getRole())
+        Role userRole = roleRepository.findByName(RoleName.ROLE_PATIENT)
                 .orElseThrow(() -> new RuntimeException("Role is not found."));
 
         user.getRoles().add(userRole);
-        userRepository.save(user);
-        user = userRepository.findByEmail(user.getEmail())
-                .orElseThrow(() -> new RuntimeException("User was not created."));
+        user = userRepository.save(user);
         userIdentityRepository.save(new UserIdentityNode(user.getId().toString()));
+    }
+
+    @Override
+    @Transactional
+    public UUID registerDoctorByAdmin(String email, String tempPassword) {
+        if (userRepository.existsByEmail(email)) {
+            throw new IllegalArgumentException("Email is already taken.");
+        }
+
+        Role doctorRole = roleRepository.findByName(RoleName.ROLE_DOCTOR)
+                .orElseThrow(() -> new RuntimeException("Doctor role not found"));
+
+        User doctor = User.builder()
+                .email(email)
+                .passwordHash(passwordEncoder.encode(tempPassword))
+                .isActive(true)
+                .is2faEnabled(true)
+                .roles(Set.of(doctorRole))
+                .build();
+
+        doctor = userRepository.save(doctor);
+        userIdentityRepository.save(new UserIdentityNode(doctor.getId().toString()));
+        return doctor.getId();
     }
 
     @Override
@@ -83,7 +107,7 @@ public class AuthServiceImpl implements AuthService {
                 .orElseThrow(() -> new RuntimeException("User is not found."));
 
         if (user.is2faEnabled()) {
-            String code = String.format("%06d", new Random().nextInt(999999));
+            String code = String.format("%06d", new Random().nextInt(1_000_000));
             user.setEmailAuthCode(code);
             user.setCodeExpiresAt(LocalDateTime.now().plusMinutes(5));
             userRepository.save(user);
@@ -149,5 +173,55 @@ public class AuthServiceImpl implements AuthService {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         return generateJwtResponse(authentication, userDetails, dpopHeader, List.of("pwd", "otp"));
+    }
+
+    @Override
+    public boolean isDoctorExists(UUID doctorId) {
+        return userRepository.findById(doctorId)
+                .map(user -> user.getRoles().stream()
+                        .anyMatch(role -> role.getName() == RoleName.ROLE_DOCTOR))
+                .orElse(false);
+    }
+
+    @Override
+    public List<Map<String, Object>> getAllPatients() {
+        return userRepository.findAll().stream()
+                .filter(u -> u.getRoles().stream().anyMatch(r -> r.getName() == RoleName.ROLE_PATIENT))
+                .map(u -> Map.<String, Object>of("id", u.getId(), "email", u.getEmail()))
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public void sendActionConfirmationOtp() {
+        User currentUser = getCurrentAuthenticatedUser();
+        String code = String.format("%06d", new Random().nextInt(1_000_000));
+        currentUser.setEmailAuthCode(code);
+        currentUser.setCodeExpiresAt(LocalDateTime.now().plusMinutes(5));
+        userRepository.save(currentUser);
+
+        emailService.send2faCode(currentUser.getEmail(), code);
+    }
+
+    @Override
+    @Transactional
+    public void verifyActionOtpForCurrentUser(String otpCode) {
+        User currentUser = getCurrentAuthenticatedUser();
+        if (currentUser.getEmailAuthCode() == null
+                || !currentUser.getEmailAuthCode().equals(otpCode)
+                || currentUser.getCodeExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new IllegalArgumentException("Invalid or expired verification code.");
+        }
+        currentUser.setEmailAuthCode(null);
+        currentUser.setCodeExpiresAt(null);
+        userRepository.save(currentUser);
+    }
+
+    private User getCurrentAuthenticatedUser() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        String token = (String) auth.getCredentials();
+        String realUserId = jwtUtils.getUserNameFromJwtToken(token);
+        return userRepository.findById(UUID.fromString(realUserId))
+                .orElseThrow(() -> new RuntimeException("Current user not found."));
     }
 }

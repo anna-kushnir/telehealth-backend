@@ -13,5 +13,7 @@ public interface AppointmentService {
     void generateWeeklySchedule(GenerateWeeklyScheduleRequest request);
     void clearUnbookedSlots(UUID doctorId, LocalDateTime start, LocalDateTime end);
     List<TimeSlot> getAvailableTimeSlots(UUID doctorId, LocalDateTime start, LocalDateTime end);
-    Appointment createAppointment(CreateAppointmentRequest request);
+    Appointment createAppointment(CreateAppointmentRequest request, String patientPseudonym);
+    List<Appointment> getMyAppointments(String patientPseudonym);
+    List<Appointment> getDoctorAppointments(UUID doctorId);
 }

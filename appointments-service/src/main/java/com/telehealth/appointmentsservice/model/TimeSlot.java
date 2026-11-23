@@ -30,5 +30,5 @@ public class TimeSlot {
 
     @Column(name = "is_booked", nullable = false)
     @Builder.Default
-    private boolean isBooked = false;
+    private boolean booked = false;
 }
