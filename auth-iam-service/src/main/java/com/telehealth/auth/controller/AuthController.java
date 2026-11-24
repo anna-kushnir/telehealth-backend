@@ -114,4 +114,21 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
+
+    @GetMapping("/2fa/status")
+    public ResponseEntity<?> get2faStatus() {
+        return ResponseEntity.ok(Map.of("enabled", authService.isCurrentUser2faEnabled()));
+    }
+
+    @PatchMapping("/2fa")
+    public ResponseEntity<?> toggle2fa(@RequestBody Map<String, Boolean> request) {
+        try {
+            boolean enabled = Boolean.TRUE.equals(request.get("enabled"));
+            authService.setCurrentUser2fa(enabled);
+            return ResponseEntity.ok(Map.of("enabled", enabled,
+                    "message", "2FA settings updated. Please re-login to upgrade your session token."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
 }

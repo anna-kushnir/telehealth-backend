@@ -73,6 +73,16 @@ public class AppointmentController {
         return ResponseEntity.ok(appointmentService.getDoctorAppointments(doctorId));
     }
 
+    @PatchMapping("/{id}/complete")
+    public ResponseEntity<?> ccompleteAppointment(@PathVariable Long id) {
+        try {
+            appointmentService.completeAppointment(id);
+            return ResponseEntity.ok(Map.of("message", "Appointment marked as COMPLETED"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @PostMapping
     public ResponseEntity<?> bookAppointment(@Valid @RequestBody CreateAppointmentRequest request) {
         String patientPseudonym = SecurityContextHelper.getCurrentUserPseudonym();

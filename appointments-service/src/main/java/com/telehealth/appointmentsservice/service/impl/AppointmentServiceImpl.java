@@ -126,4 +126,13 @@ public class AppointmentServiceImpl implements AppointmentService {
     public List<Appointment> getDoctorAppointments(UUID doctorId) {
         return appointmentRepository.findByTimeSlot_DoctorId(doctorId);
     }
+
+    @Override
+    @Transactional
+    public void completeAppointment(Long appointmentId) {
+        var appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new IllegalArgumentException("Appointment not found: " + appointmentId));
+        appointment.setStatus(AppointmentStatus.COMPLETED);
+        appointmentRepository.save(appointment);
+    }
 }

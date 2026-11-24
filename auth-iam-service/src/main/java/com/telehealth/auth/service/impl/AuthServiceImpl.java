@@ -217,6 +217,19 @@ public class AuthServiceImpl implements AuthService {
         userRepository.save(currentUser);
     }
 
+    @Override
+    public boolean isCurrentUser2faEnabled() {
+        return getCurrentAuthenticatedUser().is2faEnabled();
+    }
+
+    @Override
+    @Transactional
+    public void setCurrentUser2fa(boolean enabled) {
+        User user = getCurrentAuthenticatedUser();
+        user.set2faEnabled(enabled);
+        userRepository.save(user);
+    }
+// Admin12345!
     private User getCurrentAuthenticatedUser() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
         String token = (String) auth.getCredentials();

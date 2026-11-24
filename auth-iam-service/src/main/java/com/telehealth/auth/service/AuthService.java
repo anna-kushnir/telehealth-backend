@@ -20,4 +20,6 @@ public interface AuthService {
     List<Map<String, Object>> getAllPatients();
     void sendActionConfirmationOtp();
     void verifyActionOtpForCurrentUser(String otpCode);
+    boolean isCurrentUser2faEnabled();
+    void setCurrentUser2fa(boolean enabled);
 }

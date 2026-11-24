@@ -16,4 +16,5 @@ public interface AppointmentService {
     Appointment createAppointment(CreateAppointmentRequest request, String patientPseudonym);
     List<Appointment> getMyAppointments(String patientPseudonym);
     List<Appointment> getDoctorAppointments(UUID doctorId);
+    void completeAppointment(Long appointmentId);
 }
