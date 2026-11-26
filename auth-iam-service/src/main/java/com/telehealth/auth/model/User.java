@@ -37,12 +37,9 @@ public class User {
     @Builder.Default
     private boolean is2faEnabled = false;
 
-    @Convert(converter = StringCryptoConverter.class)
-    @Column(name = "email_auth_code")
-    private String emailAuthCode;
-
-    @Column(name = "code_expires_at")
-    private LocalDateTime codeExpiresAt;
+    @Column(name = "preferred-mfa-factor", length = 20)
+    @Builder.Default
+    private String preferredMfaFactor = "EMAIL_OTP";
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

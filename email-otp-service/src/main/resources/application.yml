@@ -1,0 +1,21 @@
+server:
+  port: 8086
+
+spring:
+  application:
+    name: email-otp-service
+
+  mail:
+    host: localhost
+    port: 1025
+    username: "noreply@telehealth.com"
+    password: ""
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
+
+mfa:
+  internal-api-key: "telehealth-mfa-secret-key-2026"

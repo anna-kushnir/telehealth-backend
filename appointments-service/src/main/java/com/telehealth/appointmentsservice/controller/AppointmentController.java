@@ -47,20 +47,6 @@ public class AppointmentController {
         return ResponseEntity.ok("Schedule for specified time period generated successfully");
     }
 
-    // TODO: delete this method or call it from the frontend
-    @DeleteMapping("/slots/clear")
-    public ResponseEntity<?> clearUnbookedSlots(
-            @RequestParam UUID doctorId,
-            @RequestParam String start,
-            @RequestParam String end) {
-        try {
-            appointmentService.clearUnbookedSlots(doctorId, LocalDateTime.parse(start), LocalDateTime.parse(end));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-        return ResponseEntity.ok("Unbooked slots deleted successfully");
-    }
-
     @GetMapping("/my")
     public ResponseEntity<List<Appointment>> getMyAppointments() {
         String patientPseudonym = SecurityContextHelper.getCurrentUserPseudonym();

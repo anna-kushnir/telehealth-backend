@@ -50,46 +50,65 @@ public class AppointmentServiceImpl implements AppointmentService {
 
         LocalDate currentDate = request.getStartDate();
         LocalDate endDate = request.getEndDate();
+        if (endDate.isBefore(currentDate)) {
+            throw new IllegalArgumentException("End date cannot be before start date.");
+        }
+        if (request.getWorkingDays() == null) {
+            throw new IllegalArgumentException("At least one working day must be chosen.");
+        }
+
+        int skippedOverlaps = 0;
+        int slotsSaved = 0;
 
         while (!currentDate.isAfter(endDate)) {
             DayOfWeek dayOfWeek = currentDate.getDayOfWeek();
 
-            if (request.getWorkingDays() != null && request.getWorkingDays().containsKey(dayOfWeek)) {
+            if (request.getWorkingDays().containsKey(dayOfWeek)) {
                 GenerateWeeklyScheduleRequest.Shift shift = request.getWorkingDays().get(dayOfWeek);
 
                 LocalDateTime currentSlotStart = LocalDateTime.of(currentDate, shift.getStartTime());
                 LocalDateTime shiftEnd = LocalDateTime.of(currentDate, shift.getEndTime());
 
                 while (!currentSlotStart.plusMinutes(request.getSlotDurationMinutes()).isAfter(shiftEnd)) {
-                    if (!timeSlotRepository.existsByDoctorIdAndStartTime(request.getDoctorId(), currentSlotStart)) {
-                        TimeSlot timeSlot = TimeSlot.builder()
-                                .doctorId(request.getDoctorId())
-                                .startTime(currentSlotStart)
-                                .endTime(currentSlotStart.plusMinutes(request.getSlotDurationMinutes()))
-                                .booked(false)
-                                .build();
-                        timeSlotRepository.save(timeSlot);
+                    LocalDateTime currentSlotEnd = currentSlotStart.plusMinutes(request.getSlotDurationMinutes());
+                    boolean overlaps = timeSlotRepository.existsOverlappingSlot(request.getDoctorId(), currentSlotStart, currentSlotEnd);
+                    if (overlaps) {
+                        skippedOverlaps++;
+                    } else {
+                        slotsSaved++;
+                        if (!timeSlotRepository.existsByDoctorIdAndStartTime(request.getDoctorId(), currentSlotStart)) {
+                            TimeSlot timeSlot = TimeSlot.builder()
+                                    .doctorId(request.getDoctorId())
+                                    .startTime(currentSlotStart)
+                                    .endTime(currentSlotEnd)
+                                    .booked(false)
+                                    .build();
+                            timeSlotRepository.save(timeSlot);
+                        }
                     }
-                    currentSlotStart = currentSlotStart.plusMinutes(request.getSlotDurationMinutes());
+                    currentSlotStart = currentSlotEnd;
                 }
             }
             currentDate = currentDate.plusDays(1);
         }
-    }
 
-    @Override
-    @Transactional
-    public void clearUnbookedSlots(UUID doctorId, LocalDateTime start, LocalDateTime end) {
-        checkDoctorExists(doctorId);
-        // TODO: add check: only admin or the same doctor can do this operation
-        timeSlotRepository.deleteUnbookedSlots(doctorId, start, end);
+        if (slotsSaved == 0 && skippedOverlaps > 0) {
+            throw new IllegalArgumentException(
+                    "All requested time slots overlap with existing schedule slots for this doctor.");
+        }
     }
 
     @Override
     public List<TimeSlot> getAvailableTimeSlots(UUID doctorId, LocalDateTime start, LocalDateTime end) {
         checkDoctorExists(doctorId);
+
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime effectiveStart = start.isBefore(now) ? now : start;
+        if (!effectiveStart.isBefore(end)) {
+            return List.of();
+        }
         return timeSlotRepository.findByDoctorIdAndBookedFalseAndStartTimeBetweenOrderByStartTimeAsc(
-                doctorId, start, end);
+                doctorId, effectiveStart, end);
     }
 
     @Override
@@ -101,6 +120,10 @@ public class AppointmentServiceImpl implements AppointmentService {
 
         if (timeSlot.isBooked()) {
             throw new IllegalStateException("Time slot is already booked");
+        }
+        if (!timeSlot.getStartTime().isAfter(LocalDateTime.now())) {
+            throw new IllegalArgumentException(
+                    "Cannot book an appointment for a slot that has already started or passed.");
         }
 
         timeSlot.setBooked(true);
@@ -119,12 +142,30 @@ public class AppointmentServiceImpl implements AppointmentService {
 
     @Override
     public List<Appointment> getMyAppointments(String patientPseudonym) {
-        return appointmentRepository.findByPatientToken(patientPseudonym);
+        List<Appointment> appointments = appointmentRepository.findByPatientToken(patientPseudonym);
+        autoCancelExpiredAppointments(appointments);
+        return appointments;
     }
 
     @Override
     public List<Appointment> getDoctorAppointments(UUID doctorId) {
-        return appointmentRepository.findByTimeSlot_DoctorId(doctorId);
+        List<Appointment> appointments = appointmentRepository.findByTimeSlot_DoctorId(doctorId);
+        autoCancelExpiredAppointments(appointments);
+        return appointments;
+
+    }
+
+    private void autoCancelExpiredAppointments(List<Appointment> appointments) {
+        LocalDateTime now = LocalDateTime.now();
+        List<Appointment> expired = appointments.stream()
+                .filter(a -> a.getStatus() == AppointmentStatus.PLANNED)
+                .filter(a -> a.getTimeSlot() != null && now.isAfter(a.getTimeSlot().getStartTime().plusMinutes(15)))
+                .peek(a -> a.setStatus(AppointmentStatus.EXPIRED))
+                .toList();
+
+        if (!expired.isEmpty()) {
+            appointmentRepository.saveAll(expired);
+        }
     }
 
     @Override

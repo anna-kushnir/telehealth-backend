@@ -13,7 +13,7 @@ import com.telehealth.auth.repository.UserRepository;
 import com.telehealth.auth.security.JwtUtils;
 import com.telehealth.auth.security.UserDetailsImpl;
 import com.telehealth.auth.service.AuthService;
-import com.telehealth.auth.service.EmailService;
+import com.telehealth.auth.service.mfa.PluggableMfaOrchestratorClient;
 import kpi.kushnir.privacy.neo4j.UserIdentityNode;
 import kpi.kushnir.privacy.neo4j.UserIdentityRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +26,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -40,10 +39,10 @@ public class AuthServiceImpl implements AuthService {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtils jwtUtils;
-    private final EmailService emailService;
 
 //    private final KafkaTemplate<String, String> kafkaTemplate;
     private final UserIdentityRepository userIdentityRepository;
+    private final PluggableMfaOrchestratorClient mfaOrchestrator;
 
     @Override
     @Transactional
@@ -107,16 +106,13 @@ public class AuthServiceImpl implements AuthService {
                 .orElseThrow(() -> new RuntimeException("User is not found."));
 
         if (user.is2faEnabled()) {
-            String code = String.format("%06d", new Random().nextInt(1_000_000));
-            user.setEmailAuthCode(code);
-            user.setCodeExpiresAt(LocalDateTime.now().plusMinutes(5));
-            userRepository.save(user);
-
-            emailService.send2faCode(user.getEmail(), code);
-
+            String factor = user.getPreferredMfaFactor() != null ? user.getPreferredMfaFactor() : "EMAIL_OTP";
+            if ("EMAIL_OTP".equals(factor)) {
+                mfaOrchestrator.dispatchChallenge("EMAIL_OTP", user.getId().toString(), user.getEmail());
+            }
             return AuthResult.builder()
                     .requires2fa(true)
-                    .message("Verification code was sent on your email.")
+                    .message("Verification required via " + factor)
                     .build();
         }
 
@@ -151,28 +147,19 @@ public class AuthServiceImpl implements AuthService {
         User user = userRepository.findByEmail(verify2faRequest.getEmail())
                 .orElseThrow(() -> new RuntimeException("Error: User is not found."));
 
+        String factor = user.getPreferredMfaFactor() != null ? user.getPreferredMfaFactor() : "EMAIL_OTP";
+        String verifiedAmr = mfaOrchestrator.verifyFactor(factor, user.getId().toString(), verify2faRequest.getCode());
+
         if (!user.is2faEnabled()) {
             throw new IllegalArgumentException("2FA is disabled for this user.");
         }
-
-        if (user.getEmailAuthCode() == null || !user.getEmailAuthCode().equals(verify2faRequest.getCode())) {
-            throw new IllegalStateException("Incorrect verification code.");
-        }
-
-        if (user.getCodeExpiresAt().isBefore(LocalDateTime.now())) {
-            throw new IllegalStateException("Verification code expired.");
-        }
-
-        user.setEmailAuthCode(null);
-        user.setCodeExpiresAt(null);
-        userRepository.save(user);
 
         UserDetailsImpl userDetails = UserDetailsImpl.build(user);
         Authentication authentication = new UsernamePasswordAuthenticationToken(
                 userDetails, null, userDetails.getAuthorities());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        return generateJwtResponse(authentication, userDetails, dpopHeader, List.of("pwd", "otp"));
+        return generateJwtResponse(authentication, userDetails, dpopHeader, List.of("pwd", verifiedAmr));
     }
 
     @Override
@@ -195,26 +182,14 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public void sendActionConfirmationOtp() {
         User currentUser = getCurrentAuthenticatedUser();
-        String code = String.format("%06d", new Random().nextInt(1_000_000));
-        currentUser.setEmailAuthCode(code);
-        currentUser.setCodeExpiresAt(LocalDateTime.now().plusMinutes(5));
-        userRepository.save(currentUser);
-
-        emailService.send2faCode(currentUser.getEmail(), code);
+        mfaOrchestrator.dispatchChallenge("EMAIL_OTP", currentUser.getId().toString(), currentUser.getEmail());
     }
 
     @Override
     @Transactional
     public void verifyActionOtpForCurrentUser(String otpCode) {
         User currentUser = getCurrentAuthenticatedUser();
-        if (currentUser.getEmailAuthCode() == null
-                || !currentUser.getEmailAuthCode().equals(otpCode)
-                || currentUser.getCodeExpiresAt().isBefore(LocalDateTime.now())) {
-            throw new IllegalArgumentException("Invalid or expired verification code.");
-        }
-        currentUser.setEmailAuthCode(null);
-        currentUser.setCodeExpiresAt(null);
-        userRepository.save(currentUser);
+        mfaOrchestrator.verifyFactor("EMAIL_OTP", currentUser.getId().toString(), otpCode);
     }
 
     @Override
@@ -227,9 +202,42 @@ public class AuthServiceImpl implements AuthService {
     public void setCurrentUser2fa(boolean enabled) {
         User user = getCurrentAuthenticatedUser();
         user.set2faEnabled(enabled);
+        if (enabled && user.getPreferredMfaFactor() == null) {
+            user.setPreferredMfaFactor("EMAIL_OTP");
+        }
         userRepository.save(user);
     }
-// Admin12345!
+
+    @Override
+    public String getCurrentUserMfaFactor() {
+        User user = getCurrentAuthenticatedUser();
+        return user.getPreferredMfaFactor() != null ? user.getPreferredMfaFactor() : "EMAIL_OTP";
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> enrollTotpForCurrentUser() {
+        User user = getCurrentAuthenticatedUser();
+        Map<String, Object> enrollment = mfaOrchestrator.enrollTotp(user.getId().toString(), user.getEmail());
+        user.set2faEnabled(true);
+        user.setPreferredMfaFactor("TOTP");
+        userRepository.save(user);
+        return enrollment;
+    }
+
+    @Override
+    @Transactional
+    public void switchMfaFactor(String factor) {
+        if (!"EMAIL_OTP".equals(factor) && !"TOTP".equals(factor)) {
+            throw new IllegalArgumentException("Unsupported MFA factor: " + factor);
+        }
+        User user = getCurrentAuthenticatedUser();
+        user.setPreferredMfaFactor(factor);
+        user.set2faEnabled(true);
+        userRepository.save(user);
+    }
+
+    // Admin12345!
     private User getCurrentAuthenticatedUser() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
         String token = (String) auth.getCredentials();

@@ -22,4 +22,7 @@ public interface AuthService {
     void verifyActionOtpForCurrentUser(String otpCode);
     boolean isCurrentUser2faEnabled();
     void setCurrentUser2fa(boolean enabled);
+    String getCurrentUserMfaFactor();
+    Map<String, Object> enrollTotpForCurrentUser();
+    void switchMfaFactor(String factor);
 }

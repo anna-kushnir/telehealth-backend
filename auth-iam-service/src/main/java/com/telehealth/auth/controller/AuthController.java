@@ -117,7 +117,9 @@ public class AuthController {
 
     @GetMapping("/2fa/status")
     public ResponseEntity<?> get2faStatus() {
-        return ResponseEntity.ok(Map.of("enabled", authService.isCurrentUser2faEnabled()));
+        return ResponseEntity.ok(Map.of(
+                "enabled", authService.isCurrentUser2faEnabled(),
+                "factor", authService.getCurrentUserMfaFactor()));
     }
 
     @PatchMapping("/2fa")
@@ -127,6 +129,25 @@ public class AuthController {
             authService.setCurrentUser2fa(enabled);
             return ResponseEntity.ok(Map.of("enabled", enabled,
                     "message", "2FA settings updated. Please re-login to upgrade your session token."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/mfa/totp/enroll")
+    public ResponseEntity<?> enrollTotp() {
+        try {
+            return ResponseEntity.ok(authService.enrollTotpForCurrentUser());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PatchMapping("/mfa/factor")
+    public ResponseEntity<?> switchMfaFactor(@RequestBody Map<String, String> request) {
+        try {
+            authService.switchMfaFactor(request.get("factor"));
+            return ResponseEntity.ok(Map.of("message", "Preferred MFA factor updated."));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

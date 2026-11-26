@@ -32,18 +32,6 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
-  mail:
-    host: localhost
-    port: 1025
-    username: ""
-    password: ""
-    properties:
-      mail:
-        smtp:
-          auth: false
-          starttls:
-            enable: false
-
 privacy-mesh:
   mfa-policies:
     auth-iam-service: LOW
@@ -51,3 +39,13 @@ privacy-mesh:
 jwt:
   secret: G72H700492HSWMDL998601SLQOWEBXZ7V12B0839216TH6FD78H1D401
   expirationMs: 3600000
+
+mfa:
+  internal-api-key: "telehealth-mfa-secret-key-2026"
+  providers:
+    EMAIL_OTP:
+      enabled: true
+      base-url: "http://localhost:8086/api/v1/factors/email-otp"
+    TOTP:
+      enabled: true
+      base-url: "http://localhost:8087/api/v1/factors/totp"
